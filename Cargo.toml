@@ -1,0 +1,33 @@
+[package]
+name = "cc3220sf-hal"
+version = "0.1.0"
+authors = ["matt"]
+edition = "2018"
+readme = "README.md"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cortex-m = "0.6.0"
+nb = "0.1.2"
+# cc3220sf = { path = "../cc3220sf" }
+
+[dependencies.embedded-hal]
+version = "0.2.3"
+features = ["unproven"]
+
+[dependencies.cortex-m-rt]
+version = "0.6.12"
+
+[dependencies.void]
+default-features = false
+version = "1.0.2"
+
+[dependencies.cc3220sf]
+path = "../cc3220sf"
+features = ["rt"]
+
+[profile.release]
+# codegen-unit = 1
+debug = true
+lto = true
