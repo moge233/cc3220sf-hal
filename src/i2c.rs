@@ -12,7 +12,6 @@ use hal::blocking::i2c::{Read, Write, WriteRead};
 use crate::sysctl::*;
 use crate::gpio::{AlternateFunction, DriveStrength};
 
-
 /*********************************************
  * Available GPIO for I2C
  * SDA Pins         SCL Pins

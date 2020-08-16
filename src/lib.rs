@@ -16,11 +16,11 @@ pub extern crate cc3220sf;
 extern crate void;
 
 
+pub mod adc;
 pub mod gpio;
 pub mod i2c;
 pub mod prcm;
 pub mod prelude;
-pub mod spi;
 pub mod sysctl;
 pub mod timer;
 pub mod uart;
