@@ -237,7 +237,7 @@ macro_rules! gpio_macro {
                     -> $PXi<Input<PullUp>> {
                         unsafe {
                             // Clear data direction bit to 0
-                            (*$GPIOX::ptr()).dir.modify(
+                            (*$GPIOX::ptr()).gpiodir.modify(
                                 |r, w| w.bits(r.bits() & !(1 << $i))
                             );
 
@@ -260,7 +260,7 @@ macro_rules! gpio_macro {
                     -> $PXi<Input<PullDown>> {
                         unsafe {
                             // Clear the data direction bit to 0
-                            (*$GPIOX::ptr()).dir.modify(
+                            (*$GPIOX::ptr()).gpiodir.modify(
                                 |r, w| w.bits(r.bits() & !(1 << $i))
                             );
 
@@ -284,7 +284,7 @@ macro_rules! gpio_macro {
                     -> $PXi<Output<OpenDrain>> {
                         unsafe {
                             // Set the data direction bit to 1 (output)
-                            (*$GPIOX::ptr()).dir.modify(
+                            (*$GPIOX::ptr()).gpiodir.modify(
                                 |r, w| w.bits(r.bits() | (1 << $i))
                             );
 
@@ -309,7 +309,7 @@ macro_rules! gpio_macro {
                     -> $PXi<Output<PushPull>> {
                         unsafe {
                             // Set the data direction bit to 1 (output)
-                            (*$GPIOX::ptr()).dir.modify(
+                            (*$GPIOX::ptr()).gpiodir.modify(
                                 |r, w| w.bits(
                                     r.bits() | (1 << $i)
                                 )

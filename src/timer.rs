@@ -55,22 +55,22 @@ macro_rules! timer_macro {
 
                 unsafe {
                     // Disable the timer
-                    (*$TIMAX::ptr()).ctl.modify(
-                        |r, w| w.bits(r.bits() & !0x1) // write 0 to bit 0
+                    (*$TIMAX::ptr()).gptmctl.modify(
+                        |_, w| w.taen().clear_bit()
                     );
 
                     // Clear the timer mode register
-                    (*$TIMAX::ptr()).tamr.write(
+                    (*$TIMAX::ptr()).gptmtamr.write(
                         |w| w.bits(0x00000000)
                     );
 
                     // Clear timer interval load value
-                    (*$TIMAX::ptr()).tailr.write(
+                    (*$TIMAX::ptr()).gptmtailr.write(
                         |w| w.bits(self.timeout.0) 
                     );
 
                     // Set the timer value register to its reset value
-                    (*$TIMAX::ptr()).tav.write(
+                    (*$TIMAX::ptr()).gptmtav.write(
                         |w| w.bits(0xFFFFFFFF)
                     );
                 }
@@ -93,64 +93,59 @@ macro_rules! timer_macro {
                 unsafe {
                     // Ensure the timer is disabled before making
                     // any changes
-                    (*$TIMAX::ptr()).ctl.modify(
-                        |r, w| w.bits(r.bits() & !0x1) // write 0 to bit 0
+                    (*$TIMAX::ptr()).gptmctl.modify(
+                        |_, w| w.taen().clear_bit()
                     );
 
                     // Write a value of 0 to the CFG register
-                    (*$TIMAX::ptr()).cfg.write(
+                    (*$TIMAX::ptr()).gptmcfg.write(
                         |w| w.bits(0x00000000)
                     );
                   
                     match self.mode {
                         TimerMode::OneShot => {
                             // Configure timer as a one shot timer
-                            (*$TIMAX::ptr()).tamr.write(
+                            (*$TIMAX::ptr()).gptmtamr.write(
                                 |w| w.tamr().bits(1)
                             );
                         }
                         _ => {
                             // Configure timer as a periodic timer
-                            (*$TIMAX::ptr()).tamr.write(
+                            (*$TIMAX::ptr()).gptmtamr.write(
                                 |w| w.tamr().bits(2)
                             );
                         }
                     }
 
                     // Set timer interval load value
-                    (*$TIMAX::ptr()).tailr.write(
+                    (*$TIMAX::ptr()).gptmtailr.write(
                         |w| w.bits(self.timeout.0) 
                     );
 
                     // Enable interrupts??
-                    (*$TIMAX::ptr()).imr.write(
-                        |w| w.bits(1)
+                    (*$TIMAX::ptr()).gptmimr.write(
+                        |w| w.tatoim().set_bit()
                     );
 
                     // Enable the timer to start counting
-                    (*$TIMAX::ptr()).ctl.modify(
-                        |r, w| w.bits(r.bits() | 0x3) // write 1 to bits 0,1
+                    (*$TIMAX::ptr()).gptmctl.modify(
+                        |_, w| w.taen().set_bit()
+                                .tastall().set_bit()
                     );
                 }
             }
 
             fn wait(&mut self) -> Result<(), nb::Error<Void>> {
-                let int_status;
                 unsafe {
-                    int_status = (*$TIMAX::ptr()).ris.read().bits() & 0x1;
-                }
-                if int_status == 1 {
-                    // Poll the raw interrupt status bit until it is 1
-                    // Write a 1 to the interrupt clear register
-                    unsafe {
-                        (*$TIMAX::ptr()).icr.modify(
-                            |r, w| w.bits(r.bits() | 0x1)
+                    if (*$TIMAX::ptr()).gptmris.read().tatoris().bits() {
+                        (*$TIMAX::ptr()).gptmicr.modify(
+                            |_, w| w.tatocint().set_bit()
                         );
+                        Ok(())
                     }
-                    Ok(())
-                }
-                else {
-                    Err(nb::Error::WouldBlock)
+                    else {
+                        Err(nb::Error::WouldBlock)
+                    }
                 }
             }
         }
@@ -201,8 +196,8 @@ macro_rules! timer_macro {
 
             pub fn clear_interrupts(self) {
                 unsafe {
-                    (*$TIMAX::ptr()).icr.modify(
-                        |r, w| w.bits(r.bits() | 0x1)
+                    (*$TIMAX::ptr()).gptmicr.modify(
+                        |_, w| w.tatocint().clear_bit()
                     );
                 }
             }

@@ -359,31 +359,35 @@ macro_rules! serial_macro {
                 unsafe {
 
                     // Enable the UART to start (UARTEN = UARTAx.CTL[0])
-                    (*$UARTAX::ptr()).ctl.modify(
-                        |r, w| w.bits(r.bits() | 0x1)
+                    (*$UARTAX::ptr()).uartctl.modify(
+                        |_, w| w.uarten().set_bit()
                     );
 
-                    // Enable the UART FIFO (FIFOEN = UARTAx.LCRH[4])
-                    (*$UARTAX::ptr()).lcrh.modify(
-                        |r, w| w.bits(r.bits() | 0x10)
+                    // Enable the UART FIFO (FIFOEN = UARTAx.LCRH[4] = 1)
+                    (*$UARTAX::ptr()).uartlcrh.modify(
+                        |_, w| w.fen().set_bit()
                     );
+
 
                     // Enable the RX and TX of the UART
                     // TXEN = UARTAx.CTL[8]
                     // RXEN = UARTAx.CTL[9]
                     // UARTEN = UARTAx.CTL[0]
-                    (*$UARTAX::ptr()).ctl.modify(
-                        |r, w| w.bits(r.bits() | 0x301)
+                    (*$UARTAX::ptr()).uartctl.modify(
+                        |_, w| w.txe().set_bit()
+                                .rxe().set_bit()
+                                .uarten().set_bit()
                     );
 
                     // Set the FIFO levels
-                    (*$UARTAX::ptr()).ifls.modify(
-                        |r, w| w.bits(r.bits() | 0x04 | 0x10)
+                    (*$UARTAX::ptr()).uartifls.modify(
+                        |_, w| w.rxiflsel().bits(0x4)
+                                .txiflsel().bits(0x1)
                     );
 
                     // Disable UART for the remaining steps
-                    (*$UARTAX::ptr()).ctl.modify(
-                        |r, w| w.bits(r.bits() & !0x01)
+                    (*$UARTAX::ptr()).uartctl.modify(
+                        |_, w| w.uarten().clear_bit()
                     );
 
                     // Get the desired Baud Rate Divisor values
@@ -391,14 +395,14 @@ macro_rules! serial_macro {
                         baud = BaudRate(baud.0 / 2);
                         // Turn on high speed mode
                         // UARTAx.CTL[5] = 1
-                        (*$UARTAX::ptr()).ctl.modify(
-                            |r, w| w.bits(r.bits() | 0x20)
+                        (*$UARTAX::ptr()).uartctl.modify(
+                            |_, w| w.hse().set_bit()
                         );
                     }
                     else {
                         // Turn off high speed mode
-                        (*$UARTAX::ptr()).ctl.modify(
-                            |r, w| w.bits(r.bits() & !0x20)
+                        (*$UARTAX::ptr()).uartctl.modify(
+                            |_, w| w.hse().clear_bit()
                         );
                     }
 
@@ -410,31 +414,31 @@ macro_rules! serial_macro {
                     // Set baud rate divisor integer and fraction values
                     // Integer: UARTAx.IBRD[15:0]
                     // Fraction: UARTAx.FBRD[5:0]
-                    (*$UARTAX::ptr()).ibrd.write(
-                        |w| w.bits(brd.integer & 0xFFFF)
+                    (*$UARTAX::ptr()).uartibrd.write(
+                        |w| w.divint().bits((brd.integer & 0xFFFF) as u16)
                     );
-                    (*$UARTAX::ptr()).fbrd.write(
-                        |w| w.bits(brd.fraction & 0x3F)
+                    (*$UARTAX::ptr()).uartfbrd.write(
+                        |w| w.divfrac().bits((brd.fraction & 0x3F) as u8)
                     );
 
                     // Set parity, data length, and stop bits
                     // PEN (parity enable) UARTAx.LCRH[1]
                     // WLEN (data length) UARTAx.LCRH[6:5]
                     // STP2 (stop bits) UARTAx.LCRH[3]
-                    (*$UARTAX::ptr()).lcrh.modify(
+                    (*$UARTAX::ptr()).uartlcrh.modify(
                         |r, w| w.bits(
                             r.bits() | par_u32 | data_length_u32 | stop_u32
                         )
                     );
 
                     // Clear the flags register UARTAx.FR
-                    (*$UARTAX::ptr()).fr.write(
+                    (*$UARTAX::ptr()).uartfr.write(
                         |w| w.bits(0)
                     );
 
                     // Re-enable the UART
-                    (*$UARTAX::ptr()).ctl.modify(
-                        |r, w| w.bits(r.bits() | 0x1)
+                    (*$UARTAX::ptr()).uartctl.modify(
+                        |_, w| w.uarten().set_bit()
                     );
                 }
 
@@ -458,18 +462,18 @@ macro_rules! serial_macro {
 
             fn read(&mut self) -> nb::Result<u8, Self::Error> {
                 let fxe = unsafe {
-                    (*$UARTAX::ptr()).fr.read().bits()
+                    (*$UARTAX::ptr()).uartfr.read().rxfe().bits()
                 };
 
-                if (fxe & 0x10) == 0x10 {
+                if fxe {
                     // There is nothing to read (FR.RXFE == 1)
                     return Err(nb::Error::WouldBlock);
                 }
 
                 let result = unsafe {
-                    (*$UARTAX::ptr()).dr.read().bits() & 0x00FF
+                    (*$UARTAX::ptr()).uartdr.read().data().bits()
                 };
-                Ok(result as u8)
+                Ok(result)
             }
         }
 
@@ -477,34 +481,38 @@ macro_rules! serial_macro {
             type Error = UartError;
 
             fn write(&mut self, word: u8) -> nb::Result<(), Self::Error> {
-                let txff = unsafe { (*$UARTAX::ptr()).fr.read().bits() };
+                let txff = unsafe {
+                    (*$UARTAX::ptr()).uartfr.read().txff().bits()
+                };
 
                 // See if there is space in the FIFO register
-                // Check if bit 5 of the FR register is set
-                // If it is set, that means the FIFO is full and we
+                // If TXFF is set, that means the FIFO is full and we
                 // can not send the byte
-                if (txff & 0x20) == 0x20 {
+                if txff {
                     return Err(nb::Error::WouldBlock);
                 }
+
                 // Otherwise the FIFO is not full and we can transmit the
                 // data
                 unsafe {
-                    (*$UARTAX::ptr()).dr.write(
-                        |w| w.bits(word as u32)
+                    (*$UARTAX::ptr()).uartdr.write(
+                        |w| w.data().bits(word)
                     );
                 }
                 Ok(())
             }
 
             fn flush(&mut self) -> nb::Result<(), Self::Error> {
-                let txfe = unsafe { (*$UARTAX::ptr()).fr.read().bits() };
+                let txfe = unsafe {
+                    (*$UARTAX::ptr()).uartfr.read().busy().bits()
+                };
 
-                // Check if bit 3 of the FR register is set
-                // If it is set, that means the UART is busy transmitting
+                // If BUSY is set, that means the UART is busy transmitting
                 // data
-                if (txfe & 0x8) == 0x8 {
+                if txfe {
                     return Err(nb::Error::WouldBlock);
                 }
+
                 Ok(())
             }
         }

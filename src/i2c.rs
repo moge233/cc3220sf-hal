@@ -249,19 +249,13 @@ pub enum I2cSpeed {
 
 macro_rules! busy_wait {
     ($I2CX:ident) => {
-        let mut busy = (*$I2CX::ptr()).mcs.read().bits() & 0x01;
-        while busy == 0x01 {
-            busy = (*$I2CX::ptr()).mcs.read().bits() & 0x01;
-        }
+        while (*$I2CX::ptr()).i2cmcs.read().busy_or_run().bits() { }
     }
 }
 
 macro_rules! bus_busy_wait {
     ($I2CX:ident) => {
-        let mut busy = (*$I2CX::ptr()).mcs.read().bits() & 0x40;
-        while busy == 0x40 {
-            busy = (*$I2CX::ptr()).mcs.read().bits() & 0x40;
-        }
+        while (*$I2CX::ptr()).i2cmcs.read().busbusy_or_burst().bits() { }
     }
 }
 
@@ -288,8 +282,8 @@ macro_rules! i2c_macro {
 
                 unsafe {
                     // Enable I2C for master operation
-                    (*$I2CX::ptr()).mcr.modify(
-                        |r, w| w.bits(r.bits() | 0x10)
+                    (*$I2CX::ptr()).i2cmcr.modify(
+                        |_, w| w.mfe().set_bit()
                     );
 
                     // Configure I2C clock period
@@ -300,13 +294,13 @@ macro_rules! i2c_macro {
                     // for details.
                     match speed {
                         I2cSpeed::Standard => {
-                            (*$I2CX::ptr()).mtpr.write(
-                                |w| w.tpr().bits(0x27)
+                            (*$I2CX::ptr()).i2cmtpr.modify(
+                                |_, w| w.tpr().bits(0x27)
                             );
                         },
                         I2cSpeed::Fast => {
-                            (*$I2CX::ptr()).mtpr.write(
-                                |w| w.tpr().bits(0x09)
+                            (*$I2CX::ptr()).i2cmtpr.modify(
+                                |_, w| w.tpr().bits(0x09)
                             );
                         },
                     }
@@ -333,17 +327,13 @@ macro_rules! i2c_macro {
                 unsafe {
                     // Specify the slave address and set the next
                     // transmission as a write
-                    (*$I2CX::ptr()).msa.write(
-                        |w| w.sa().bits(addr)
-                    );
-                    (*$I2CX::ptr()).msa.modify(
-                        |r, w| w.bits(
-                            r.bits() & (!0x01)
-                        )
+                    (*$I2CX::ptr()).i2cmsa.modify(
+                        |_, w| w.sa().bits(addr)
+                                .r_s().clear_bit()
                     );
 
                     // Put the first byte in the data register
-                    (*$I2CX::ptr()).mdr.write(
+                    (*$I2CX::ptr()).i2cmdr.write(
                         |w| w.data().bits(bytes[index])
                     );
                     index += 1;
@@ -353,13 +343,16 @@ macro_rules! i2c_macro {
                     // Send START + RUN
                     // Send STOP if there is only one byte to transfer
                     if size == 1 {
-                        (*$I2CX::ptr()).mcs.write(
-                            |w| w.bits(0x07)
+                        (*$I2CX::ptr()).i2cmcs.write(
+                            |w| w.adrack_or_stop().set_bit()
+                                 .error_or_start().set_bit()
+                                 .busy_or_run().set_bit()
                         );
                     }
                     else {
-                        (*$I2CX::ptr()).mcs.write(
-                            |w| w.bits(0x03)
+                        (*$I2CX::ptr()).i2cmcs.write(
+                            |w| w.error_or_start().set_bit()
+                                 .busy_or_run().set_bit()
                         );
                     }
 
@@ -368,20 +361,21 @@ macro_rules! i2c_macro {
                         index += 1;
 
                         // Put byte in the data register
-                        (*$I2CX::ptr()).mdr.write(
+                        (*$I2CX::ptr()).i2cmdr.write(
                             |w| w.data().bits(c)
                         );
 
                         // Send RUN command (Burst continue)
                         // Set STOP if we are on the last byte
                         if index == (size - 1) {
-                            (*$I2CX::ptr()).mcs.write(
-                                |w| w.bits(0x05)
+                            (*$I2CX::ptr()).i2cmcs.write(
+                                |w| w.adrack_or_stop().set_bit()
+                                     .busy_or_run().set_bit()
                             );
                         }
                         else {
-                            (*$I2CX::ptr()).mcs.write(
-                                |w| w.bits(0x01)
+                            (*$I2CX::ptr()).i2cmcs.write(
+                                |w| w.busy_or_run().set_bit()
                             );
                         }
                     }
@@ -405,13 +399,11 @@ macro_rules! i2c_macro {
 
                 unsafe {
                     // Specify the slave address and set the read bit
-                    (*$I2CX::ptr()).msa.write(
+                    (*$I2CX::ptr()).i2cmsa.write(
                         |w| w.sa().bits(addr)
                     );
-                    (*$I2CX::ptr()).msa.modify(
-                        |r, w| w.bits(
-                            r.bits() | 0x01
-                        )
+                    (*$I2CX::ptr()).i2cmsa.write(
+                        |w| w.r_s().set_bit()
                     );
 
                     bus_busy_wait!($I2CX);
@@ -419,51 +411,48 @@ macro_rules! i2c_macro {
                     // If there is only one byte to receive, send
                     // START, RUN, STOP
                     if size == 1 {
-                        (*$I2CX::ptr()).mcs.write(
-                            |w| w.bits(0x07)
+                        (*$I2CX::ptr()).i2cmcs.write(
+                            |w| w.adrack_or_stop().set_bit()
+                                 .error_or_start().set_bit()
+                                 .busy_or_run().set_bit()
                         );
                     }
                     // Send START + RUN + ACK
                     else {
-                        (*$I2CX::ptr()).mcs.write(
-                            |w| w.bits(0x0B)
+                        (*$I2CX::ptr()).i2cmcs.write(
+                            |w| w.datack_or_ack().set_bit()
+                                 .error_or_start().set_bit()
+                                 .busy_or_run().set_bit()
                         );
 
                         busy_wait!($I2CX);
 
                         // Read first data byte
-                        buffer[index] = (*$I2CX::ptr()).mdr
-                                                       .read()
-                                                       .data()
-                                                       .bits();
+                        buffer[index] = (*$I2CX::ptr()).i2cmdr.read().data().bits();
                         index += 1;
 
                         while index < (size - 1) {
                             // Send RUN + ACK
-                            (*$I2CX::ptr()).mcs.write(
-                                |w| w.bits(0x09)
+                            (*$I2CX::ptr()).i2cmcs.write(
+                                |w| w.datack_or_ack().set_bit()
+                                     .busy_or_run().set_bit()
                             );
                             busy_wait!($I2CX);
-                            buffer[index] = (*$I2CX::ptr()).mdr
-                                                           .read()
-                                                           .data()
-                                                           .bits();
+                            buffer[index] = (*$I2CX::ptr()).i2cmdr.read().data().bits();
                             index += 1;
                         }
 
                         // Send RUN + STOP
-                        (*$I2CX::ptr()).mcs.write(
-                            |w| w.bits(0x05)
+                        (*$I2CX::ptr()).i2cmcs.write(
+                            |w| w.adrack_or_stop().set_bit()
+                                 .busy_or_run().set_bit()
                         );
                     }
                     
                     busy_wait!($I2CX);
 
                     // Read the last byte
-                    buffer[index] = (*$I2CX::ptr()).mdr
-                                                  .read()
-                                                  .data()
-                                                  .bits();
+                    buffer[index] = (*$I2CX::ptr()).i2cmdr.read().data().bits();
                 }
 
                 Ok(())
@@ -495,17 +484,17 @@ macro_rules! i2c_macro {
                 
                 unsafe {
                     // Write the slave address and clear the receive bit
-                    (*$I2CX::ptr()).msa.write(
+                    (*$I2CX::ptr()).i2cmsa.write(
                         |w| w.sa().bits(addr)
                     );
-                    (*$I2CX::ptr()).msa.modify(
+                    (*$I2CX::ptr()).i2cmsa.modify(
                         |r, w| w.bits(
                             r.bits() & (!0x01)
                         )
                     );
 
                     // Send the first byte
-                    (*$I2CX::ptr()).mdr.write(
+                    (*$I2CX::ptr()).i2cmdr.write(
                         |w| w.data().bits(bytes[write_index])
                     );
                     write_index += 1;
@@ -514,7 +503,7 @@ macro_rules! i2c_macro {
                     bus_busy_wait!($I2CX);
 
                     // Send START + RUN
-                    (*$I2CX::ptr()).mcs.write(
+                    (*$I2CX::ptr()).i2cmcs.write(
                         |w| w.bits(0x03)
                     );
 
@@ -523,13 +512,13 @@ macro_rules! i2c_macro {
 
                     while write_index < write_len {
                         // Send next byte of data
-                        (*$I2CX::ptr()).mdr.write(
+                        (*$I2CX::ptr()).i2cmdr.write(
                             |w| w.data().bits(bytes[write_index])
                         );
                         write_index += 1;
 
                         // Send RUN
-                        (*$I2CX::ptr()).mcs.write(
+                        (*$I2CX::ptr()).i2cmcs.write(
                             |w| w.bits(0x01)
                         );
 
@@ -538,10 +527,10 @@ macro_rules! i2c_macro {
 
                     // Setup for read
                     // Write slave address and set read bit
-                    (*$I2CX::ptr()).msa.write(
+                    (*$I2CX::ptr()).i2cmsa.write(
                         |w| w.sa().bits(addr)
                     );
-                    (*$I2CX::ptr()).msa.modify(
+                    (*$I2CX::ptr()).i2cmsa.modify(
                         |r, w| w.bits(
                             r.bits() | 0x01
                         )
@@ -549,24 +538,24 @@ macro_rules! i2c_macro {
 
                     if read_len == 1 {
                         // Send START + STOP
-                        (*$I2CX::ptr()).mcs.write(
+                        (*$I2CX::ptr()).i2cmcs.write(
                             |w| w.bits(0x06)
                         );
                         busy_wait!($I2CX);
-                        buffer[read_index] = (*$I2CX::ptr()).mdr
+                        buffer[read_index] = (*$I2CX::ptr()).i2cmdr
                                                             .read()
                                                             .data()
                                                             .bits();
                     }
                     else {
                         // Send START + ACK
-                        (*$I2CX::ptr()).mcs.write(
+                        (*$I2CX::ptr()).i2cmcs.write(
                             |w| w.bits(0x0A)
                         );
 
                         busy_wait!($I2CX);
 
-                        buffer[read_index] = (*$I2CX::ptr()).mdr
+                        buffer[read_index] = (*$I2CX::ptr()).i2cmdr
                                                             .read()
                                                             .data()
                                                             .bits();
@@ -574,13 +563,13 @@ macro_rules! i2c_macro {
 
                         while read_index < (read_len-1) {
                             // Send RUN + ACK
-                            (*$I2CX::ptr()).mcs.write(
+                            (*$I2CX::ptr()).i2cmcs.write(
                                 |w| w.bits(0x09)
                             );
 
                             busy_wait!($I2CX);
 
-                            buffer[read_index] = (*$I2CX::ptr()).mdr
+                            buffer[read_index] = (*$I2CX::ptr()).i2cmdr
                                                                 .read()
                                                                 .data()
                                                                 .bits();
@@ -588,13 +577,13 @@ macro_rules! i2c_macro {
                         }
 
                         // Send RUN + STOP
-                        (*$I2CX::ptr()).mcs.write(
+                        (*$I2CX::ptr()).i2cmcs.write(
                             |w| w.bits(0x05)
                         );
 
                         busy_wait!($I2CX);
 
-                        buffer[read_index] = (*$I2CX::ptr()).mdr
+                        buffer[read_index] = (*$I2CX::ptr()).i2cmdr
                                                             .read()
                                                             .data()
                                                             .bits();
