@@ -17,6 +17,7 @@ extern crate void;
 pub extern crate cc3220sf as pac;
 
 
+pub mod adc;
 pub mod gpio;
 pub mod i2c;
 pub mod prcm;
