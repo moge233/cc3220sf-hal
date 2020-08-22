@@ -7,7 +7,7 @@ readme = "README.md"
 description = "HAL crate for the Texas Instruments CC3220SF"
 keywords = ["svd2rust", "arm", "cc3220sf", "HAL", "TI"]
 license= "GPL-3.0"
-github= "https://github.com/moge233/cc3220sf-hal"
+repository = "https://github.com/moge233/cc3220sf-hal"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
