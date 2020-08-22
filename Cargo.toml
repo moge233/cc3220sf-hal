@@ -4,6 +4,10 @@ version = "0.2.0"
 authors = ["matt"]
 edition = "2018"
 readme = "README.md"
+description = "HAL crate for the Texas Instruments CC3220SF"
+keywords = ["svd2rust", "cortex-m", "arm", "cc3220sf", "HAL", "TI"]
+license= "GPL-3.0"
+github= "https://github.com/moge233/cc3220sf-hal"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
