@@ -254,7 +254,8 @@ impl Channel<ADC> for PA05<AlternateFunction> {
 macro_rules! adc_macro {
     ($ADCX:ident, $adcx:ident) => {
         
-        use cc3220sf::$ADCX;
+        // use cc3220sf::$ADCX;
+        use pac::$ADCX;
         
         impl Adc<$ADCX> {
             pub fn $adcx<ADCP>(
@@ -267,24 +268,32 @@ macro_rules! adc_macro {
                 /*
                  * Initialize the ADC module for application use
                  */
+
+                static mut COUNT: u8 = 0;
                 
                 let mut s = Self {
                     adc
                 };
-                
-                // Turn the pin into an analog pin
-                pin.to_adc_pin();
-                
-                // Enable the ADC for application use
-                s.enable_adc();
-                
-                // Enable the channel
-                pin.enable_channel();
-                
-                // Empty 5 samples from the ADC
-                for _ in (0..5) {
-                    while(pin.get_fifo_lvl() == 0) { }
-                    let _discard_sample = pin.fifo_read();
+              
+                unsafe {
+                    if COUNT < 4 {
+                        COUNT += 1;
+
+                        // Turn the pin into an analog pin
+                        pin.to_adc_pin();
+                        
+                        // Enable the ADC for application use
+                        s.enable_adc();
+                        
+                        // Enable the channel
+                        pin.enable_channel();
+                        
+                        // Empty 5 samples from the ADC
+                        for _ in (0..5) {
+                            while(pin.get_fifo_lvl() == 0) { }
+                            let _discard_sample = pin.fifo_read();
+                        }
+                    }
                 }
                 
                 // Return the ADC for use
@@ -295,9 +304,7 @@ macro_rules! adc_macro {
                 // Enables the ADC module
                 unsafe {
                     (*$ADCX::ptr()).ctrl.modify(
-                        |r, w| w.bits(
-                            r.bits() | 0x01
-                        )
+                        |_, w| w.adc_en_apps().set_bit()
                     )
                 }
             }
@@ -306,9 +313,7 @@ macro_rules! adc_macro {
                 // Disables the ADC module
                 unsafe {
                     (*$ADCX::ptr()).ctrl.modify(
-                        |r, w| w.bits(
-                            r.bits() & (!0x01)
-                        )
+                        |_, w| w.adc_en_apps().clear_bit()
                     )
                 }
             }
@@ -318,8 +323,11 @@ macro_rules! adc_macro {
                 ADCP: AdcPin<$ADCX>
             {
                 // Performs an ADC conversion on the channel of the given pin
-                while pin.get_fifo_lvl() == 0 {
-                }
+                
+                // Wait for data in the FIFO 
+                while pin.get_fifo_lvl() == 0 { }
+
+                // Read the data
                 let data: u32 = pin.fifo_read();
                 data
             }
